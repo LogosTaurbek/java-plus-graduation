@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: main-service
+  cloud:
+    config:
+      uri: http://localhost:8888 # This will be overridden if we use Eureka to find Config Server, but for bootstrap we need a starting point or Eureka config.
+      fail-fast: true
+      discovery:
+        enabled: true
+        service-id: config-server
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/

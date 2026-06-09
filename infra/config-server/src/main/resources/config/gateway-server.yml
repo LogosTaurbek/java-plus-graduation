@@ -1,0 +1,18 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+      routes:
+        - id: main-service
+          uri: lb://main-service
+          predicates:
+            - Path=/admin/**, /users/**, /events/**, /categories/**, /compilations/**
+        - id: stat-server
+          uri: lb://stat-server
+          predicates:
+            - Path=/hit, /stats
