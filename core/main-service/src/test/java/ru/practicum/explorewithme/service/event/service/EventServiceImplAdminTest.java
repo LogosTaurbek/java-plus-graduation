@@ -23,6 +23,7 @@ import ru.practicum.explorewithme.service.exception.ConflictException;
 import ru.practicum.explorewithme.service.request.dal.EventRequestRepository;
 import ru.practicum.explorewithme.service.request.enums.ParticipationRequestStatus;
 import ru.practicum.explorewithme.service.user.model.User;
+import ru.practicum.explorewithme.stats.client.StatsClient;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -43,6 +44,8 @@ class EventServiceImplAdminTest {
     private CategoryRepository categoryRepository;
     @Mock
     private EventRequestRepository requestRepository;
+    @Mock
+    private StatsClient statsClient;
 
     @InjectMocks
     private EventServiceImpl eventService;

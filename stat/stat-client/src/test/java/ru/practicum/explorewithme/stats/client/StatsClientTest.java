@@ -7,6 +7,8 @@ import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -23,23 +25,30 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class StatsClientTest {
 
     private MockWebServer mockWebServer;
     private StatsClient statsClient;
     private ObjectMapper objectMapper;
+    private DiscoveryClient discoveryClient;
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @BeforeEach
     void setUp() throws IOException {
         mockWebServer = new MockWebServer();
         mockWebServer.start();
-        String baseUrl = mockWebServer.url("/").toString();
-        if (baseUrl.endsWith("/")) {
-            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
-        }
-        statsClient = new StatsClient(baseUrl, WebClient.builder());
+
+        discoveryClient = mock(DiscoveryClient.class);
+        ServiceInstance serviceInstance = mock(ServiceInstance.class);
+        when(serviceInstance.getHost()).thenReturn(mockWebServer.getHostName());
+        when(serviceInstance.getPort()).thenReturn(mockWebServer.getPort());
+        when(discoveryClient.getInstances(anyString())).thenReturn(List.of(serviceInstance));
+
+        statsClient = new StatsClient("stat-server", WebClient.builder(), discoveryClient);
         objectMapper = new ObjectMapper();
         objectMapper.findAndRegisterModules(); // поддержка LocalDateTime
     }

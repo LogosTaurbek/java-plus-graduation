@@ -76,8 +76,13 @@ public class EventServiceImpl implements EventService {
         Pageable pageable = PageRequest.of(from / size, size, Sort.by("id").ascending());
         List<Event> events = eventRepository.findAllByInitiatorId(userId, pageable).getContent();
         Map<Long, Long> confirmedRequests = getConfirmedRequests(events);
+        Map<Long, Long> views = getViewsMap(events);
 
-        return events.stream().map(e -> EventMapper.toShortDto(e, confirmedRequests.getOrDefault(e.getId(), 0L), 0L)).collect(Collectors.toList());
+        return events.stream()
+                .map(e -> EventMapper.toShortDto(e,
+                        confirmedRequests.getOrDefault(e.getId(), 0L),
+                        views.getOrDefault(e.getId(), 0L)))
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -85,7 +90,10 @@ public class EventServiceImpl implements EventService {
         log.info("Получение события id={} пользователя id={}", eventId, userId);
         Event event = eventRepository.findByIdAndInitiatorId(eventId, userId).orElseThrow(() -> new NotFoundException("Событие с id=" + eventId + " не найдено или недоступно"));
         Long confirmed = requestRepository.countByEventIdAndStatus(eventId, ParticipationRequestStatus.CONFIRMED).longValue();
-        return EventMapper.toFullDto(event, confirmed, 0L);
+        
+        EventFullDto dto = EventMapper.toFullDto(event, confirmed, 0L);
+        dto.setViews(getViews(eventId, dto));
+        return dto;
     }
 
     @Override
@@ -121,7 +129,10 @@ public class EventServiceImpl implements EventService {
         eventRepository.save(event);
         log.debug("Событие обновлено");
         Long confirmed = requestRepository.countByEventIdAndStatus(eventId, ParticipationRequestStatus.CONFIRMED).longValue();
-        return EventMapper.toFullDto(event, confirmed, 0L);
+        
+        EventFullDto dto = EventMapper.toFullDto(event, confirmed, 0L);
+        dto.setViews(getViews(eventId, dto));
+        return dto;
     }
 
     @Override
@@ -131,10 +142,16 @@ public class EventServiceImpl implements EventService {
         BooleanExpression predicate = EventPredicate.buildAdmin(params);
 
         Pageable pageable = PageRequest.of(params.getFrom() / params.getSize(), params.getSize(), Sort.by("id").ascending());
-        Page<Event> events = eventRepository.findAll(predicate, pageable);
-        Map<Long, Long> confirmedRequests = getConfirmedRequests(events.getContent());
+        Page<Event> eventsPage = eventRepository.findAll(predicate, pageable);
+        List<Event> events = eventsPage.getContent();
+        Map<Long, Long> confirmedRequests = getConfirmedRequests(events);
+        Map<Long, Long> views = getViewsMap(events);
 
-        return events.stream().map(e -> EventMapper.toFullDto(e, confirmedRequests.getOrDefault(e.getId(), 0L), 0L)).collect(Collectors.toList());
+        return events.stream()
+                .map(e -> EventMapper.toFullDto(e,
+                        confirmedRequests.getOrDefault(e.getId(), 0L),
+                        views.getOrDefault(e.getId(), 0L)))
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -177,7 +194,10 @@ public class EventServiceImpl implements EventService {
         eventRepository.save(event);
         log.debug("Событие обновлено администратором");
         Long confirmed = requestRepository.countByEventIdAndStatus(eventId, ParticipationRequestStatus.CONFIRMED).longValue();
-        return EventMapper.toFullDto(event, confirmed, 0L);
+        
+        EventFullDto dto = EventMapper.toFullDto(event, confirmed, 0L);
+        dto.setViews(getViews(eventId, dto));
+        return dto;
     }
 
     @Override
@@ -212,15 +232,24 @@ public class EventServiceImpl implements EventService {
 
         LocalDateTime start = events.stream()
                 .map(Event::getCreatedOn)
+                .filter(java.util.Objects::nonNull)
                 .min(LocalDateTime::compareTo)
                 .orElse(LocalDateTime.now().minusYears(10));
 
         Map<Long, Long> viewsMap = new HashMap<>();
-        long views = 0;
         try {
             ResponseEntity<List<ViewStatsDTO>> response = statsClient.getStats(start, LocalDateTime.now(), uris, true);
             List<ViewStatsDTO> stats = response.getBody();
-            views = (stats == null) ? 0 : stats.getFirst().getHits();
+            if (stats != null) {
+                for (ViewStatsDTO stat : stats) {
+                    String uri = stat.getUri();
+                    try {
+                        Long eventId = Long.parseLong(uri.substring(uri.lastIndexOf("/") + 1));
+                        viewsMap.put(eventId, stat.getHits());
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
         } catch (Exception e) {
             log.error("Ошибка при получении статистики для событий: {}", e.getMessage());
         }
@@ -241,7 +270,16 @@ public class EventServiceImpl implements EventService {
 
         Page<Event> page = eventRepository.findAll(predicate, pageable);
 
-        List<EventShortDto> list = page.stream().map(EventMapper::toShortDto).toList();
+        List<Event> events = page.getContent();
+        Map<Long, Long> confirmedRequests = getConfirmedRequests(events);
+        Map<Long, Long> views = getViewsMap(events);
+
+        List<EventShortDto> list = events.stream()
+                .map(e -> EventMapper.toShortDto(e,
+                        confirmedRequests.getOrDefault(e.getId(), 0L),
+                        views.getOrDefault(e.getId(), 0L)))
+                .collect(Collectors.toList());
+
         log.info("Список событий после фильтрации {}", list);
         return list;
     }
@@ -261,7 +299,6 @@ public class EventServiceImpl implements EventService {
             throw new NotFoundException("Событие должно быть опубликовано");
         }
 
-
         //        получает статистику по событию
         long views = getViews(eventId, event);
         event.setViews(views);
@@ -274,15 +311,13 @@ public class EventServiceImpl implements EventService {
     private Long getViews(Long eventId, EventFullDto event) {
         final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         LocalDateTime dateTime = LocalDateTime.parse(event.getCreatedOn(), FORMATTER);
-        long views = 0;
         try {
             ResponseEntity<List<ViewStatsDTO>> response = statsClient.getStats(dateTime, LocalDateTime.now(), List.of("/events/" + eventId), true);
             List<ViewStatsDTO> stats = response.getBody();
-            views = (stats == null) ? 0 : stats.getFirst().getHits();
+            return (stats == null || stats.isEmpty()) ? 0L : stats.get(0).getHits();
         } catch (Exception e) {
             log.error("Ошибка при получении статистики для события {}: {}", eventId, e.getMessage());
+            return 0L;
         }
-        return views;
-
     }
 }

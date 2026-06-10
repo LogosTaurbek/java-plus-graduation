@@ -47,7 +47,7 @@ public class EventPublicController {
             throw new BadRequestException("rangeEnd должен быть позже rangeStart");
         }
         EndpointHitDTO hit = new EndpointHitDTO();
-        hit.setApp("ewm-main-service");
+        hit.setApp(appProperties.getName());
         hit.setUri(request.getRequestURI());
         hit.setIp(request.getRemoteAddr());
         hit.setTimestamp(LocalDateTime.now());
