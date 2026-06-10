@@ -2,10 +2,12 @@ server:
   port: 8081
 
 spring:
+  application:
+    name: user-service
   datasource:
-    url: jdbc:postgresql://127.0.0.1:5432/ewm_main_db
+    url: jdbc:postgresql://localhost:5432/ewm_main_db
     username: postgres
-    password: "postgres" postgres
+    password: postgres
     driver-class-name: org.postgresql.Driver
   sql:
     init:
