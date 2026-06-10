@@ -13,6 +13,9 @@
     <packaging>pom</packaging>
 
     <modules>
+        <module>common</module>
         <module>main-service</module>
+        <module>user-service</module>
+        <module>user-client</module>
     </modules>
 </project>

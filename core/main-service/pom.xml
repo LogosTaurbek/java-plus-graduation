@@ -78,6 +78,19 @@
             <version>5.1.0</version>
         </dependency>
 
+        <!--   Common     -->
+        <dependency>
+            <groupId>ru.practicum</groupId>
+            <artifactId>common</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+
+        <dependency>
+            <groupId>ru.practicum</groupId>
+            <artifactId>user-client</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+
         <!--   Stat-client     -->
         <dependency>
             <groupId>ru.practicum</groupId>

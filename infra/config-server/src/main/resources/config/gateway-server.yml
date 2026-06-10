@@ -8,10 +8,14 @@ spring:
         locator:
           enabled: true
       routes:
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/users/**
         - id: main-service
           uri: lb://main-service
           predicates:
-            - Path=/admin/**, /users/**, /events/**, /categories/**, /compilations/**
+            - Path=/admin/**, /events/**, /categories/**, /compilations/**
         - id: stat-server
           uri: lb://stat-server
           predicates:
