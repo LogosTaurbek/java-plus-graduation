@@ -4,19 +4,11 @@ server:
 spring:
   cloud:
     gateway:
-      discovery:
-        locator:
-          enabled: true
       routes:
-        - id: user-service
-          uri: lb://user-service
-          predicates:
-            - Path=/users/**
         - id: main-service
           uri: lb://main-service
           predicates:
-            - Path=/admin/**, /events/**, /categories/**, /compilations/**
-        - id: stat-server
-          uri: lb://stat-server
-          predicates:
-            - Path=/hit, /stats
+            - Path=/categories/**, /events/**, /compilations/**, /locations/**, /admin/**, /users/**
+      loadbalancer:
+        cache:
+          enabled: false
