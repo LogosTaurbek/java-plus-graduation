@@ -9,7 +9,7 @@ spring:
         enabled: true
         service-id: config-server
   datasource:
-    url: jdbc:postgresql://localhost:5432/ewm_main_db
+    url: jdbc:postgresql://localhost:5433/ewm_main_db
     username: postgres
     password: 54321
 
