@@ -7,7 +7,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/ewm_stats_db
     username: postgres
-    password: 54321
+    password: 12345
     driver-class-name: org.postgresql.Driver
 
   jpa:
