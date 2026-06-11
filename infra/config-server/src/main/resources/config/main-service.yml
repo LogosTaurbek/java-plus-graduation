@@ -18,3 +18,9 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+
+stats-service:
+  id: stats-server
+  retry:
+    max-attempts: 3
+    back-off-period: 3000
