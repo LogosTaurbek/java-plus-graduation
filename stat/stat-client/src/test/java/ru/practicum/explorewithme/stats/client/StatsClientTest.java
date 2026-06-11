@@ -60,26 +60,21 @@ class StatsClientTest {
 
     // ----------------- saveHit -----------------
     @Test
-    void saveHit_ShouldSendPostWithCorrectBodyAndReturnResponse() throws Exception {
+    void saveHit_ShouldSendPostWithCorrectBody() throws Exception {
         EndpointHitDTO hit = new EndpointHitDTO(null, "app", "/uri", "1.1.1.1",
                 LocalDateTime.of(2025, 5, 5, 12, 0, 0));
         String expectedBody = objectMapper.writeValueAsString(hit);
 
-        // Важно вернуть валидный JSON, иначе WebClient не сможет десериализовать
         mockWebServer.enqueue(new MockResponse()
                 .setResponseCode(201)
-                .setBody("\"Hit saved\"")   // JSON-строка
+                .setBody("\"Hit saved\"")
                 .addHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE));
 
-        ResponseEntity<Object> response = statsClient.saveHit(hit);
+        statsClient.saveHit(hit);
 
-        // Проверяем HTTP-статус
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        // Тело должно быть десериализовано как строка "Hit saved"
-        assertThat(response.getBody()).isEqualTo("Hit saved");
-
-        // Проверяем детали запроса
-        RecordedRequest request = mockWebServer.takeRequest();
+        // Ждём async запроса
+        RecordedRequest request = mockWebServer.takeRequest(2, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(request).isNotNull();
         assertThat(request.getMethod()).isEqualTo("POST");
         assertThat(request.getPath()).isEqualTo("/hit");
         assertThat(request.getHeader(HttpHeaders.CONTENT_TYPE))
@@ -88,15 +83,14 @@ class StatsClientTest {
     }
 
     @Test
-    void saveHit_WhenServerError_ShouldThrowException() {
+    void saveHit_WhenServerError_ShouldNotThrow() {
         EndpointHitDTO hit = new EndpointHitDTO(null, "app", "/uri", "1.1.1.1", LocalDateTime.now());
         mockWebServer.enqueue(new MockResponse()
                 .setResponseCode(500)
                 .addHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE));
 
-        ResponseEntity<Object> response = statsClient.saveHit(hit);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        // Async — не должен бросать исключение
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> statsClient.saveHit(hit));
     }
 
     // ----------------- getStats -----------------
@@ -176,11 +170,11 @@ class StatsClientTest {
     }
 
     @Test
-    void saveHit_WhenConnectionRefused_ShouldThrowException() throws IOException {
+    void saveHit_WhenConnectionRefused_ShouldNotThrow() throws IOException {
         EndpointHitDTO hit = new EndpointHitDTO(null, "app", "/uri", "1.1.1.1", LocalDateTime.now());
-            mockWebServer.shutdown();
+        mockWebServer.shutdown();
 
-        ResponseEntity<Object> response = statsClient.saveHit(hit);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        // Async — не должен бросать исключение даже при недоступном сервере
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> statsClient.saveHit(hit));
     }
 }
