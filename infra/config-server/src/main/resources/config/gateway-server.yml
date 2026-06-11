@@ -9,6 +9,6 @@ spring:
           uri: lb://main-service
           predicates:
             - Path=/categories/**, /events/**, /compilations/**, /locations/**, /admin/**, /users/**
-      loadbalancer:
-        cache:
-          enabled: false
+    loadbalancer:
+      cache:
+        enabled: false
