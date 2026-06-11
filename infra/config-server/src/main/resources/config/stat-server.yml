@@ -5,9 +5,9 @@ spring:
   application:
     name: stat-server
   datasource:
-    url: jdbc:postgresql://127.0.0.1:5432/ewm_stats_db
+    url: jdbc:postgresql://localhost:5433/ewm_stats_db
     username: postgres
-    password: "postgres"
+    password: 54321
     driver-class-name: org.postgresql.Driver
 
   jpa:
