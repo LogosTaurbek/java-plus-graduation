@@ -4,7 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.discovery.DiscoveryClient;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.retry.policy.MaxAttemptsRetryPolicy;
 import org.springframework.retry.support.RetryTemplate;
@@ -15,6 +14,7 @@ import ru.practicum.explorewithme.stats.dto.EndpointHitDTO;
 import ru.practicum.explorewithme.stats.dto.ViewStatsDTO;
 
 import java.net.URI;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -39,11 +39,11 @@ public class StatsClient {
 
         this.retryTemplate = new RetryTemplate();
         FixedBackOffPolicy fixedBackOffPolicy = new FixedBackOffPolicy();
-        fixedBackOffPolicy.setBackOffPeriod(3000L);
+        fixedBackOffPolicy.setBackOffPeriod(500L);
         retryTemplate.setBackOffPolicy(fixedBackOffPolicy);
 
         MaxAttemptsRetryPolicy retryPolicy = new MaxAttemptsRetryPolicy();
-        retryPolicy.setMaxAttempts(3);
+        retryPolicy.setMaxAttempts(2);
         retryTemplate.setRetryPolicy(retryPolicy);
     }
 
@@ -67,19 +67,20 @@ public class StatsClient {
         return URI.create("http://" + instance.getHost() + ":" + instance.getPort() + path);
     }
 
-    public ResponseEntity<Object> saveHit(EndpointHitDTO hitDto) {
+    public void saveHit(EndpointHitDTO hitDto) {
         try {
-            log.info("Отправка статистики на сервер: {}", hitDto);
             URI uri = makeUri("/hit");
-            return webClient.post()
+            webClient.post()
                     .uri(uri)
                     .bodyValue(hitDto)
                     .retrieve()
                     .toEntity(Object.class)
-                    .block();
+                    .subscribe(
+                            response -> log.debug("Hit saved: {}", hitDto.getUri()),
+                            error -> log.warn("Не удалось сохранить хит: {}", error.getMessage())
+                    );
         } catch (Exception e) {
-            log.warn("Не удалось сохранить хит в статистику. Ошибка: {}. Тело: {}", e.getMessage(), hitDto);
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+            log.warn("Не удалось отправить хит в статистику. Ошибка: {}", e.getMessage());
         }
     }
 
@@ -103,6 +104,6 @@ public class StatsClient {
                 })
                 .retrieve()
                 .toEntityList(ViewStatsDTO.class)
-                .block();
+                .block(Duration.ofSeconds(5));
     }
 }
