@@ -5,9 +5,9 @@ spring:
   application:
     name: main-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/ewm_main_db
-    username: postgres
-    password: 12345
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5433}/ewm_main_db
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:54321}
     driver-class-name: org.postgresql.Driver
   sql:
     init:

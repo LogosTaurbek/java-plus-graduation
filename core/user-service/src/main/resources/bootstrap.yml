@@ -8,10 +8,6 @@ spring:
       discovery:
         enabled: true
         service-id: config-server
-  datasource:
-    url: jdbc:postgresql://localhost:5432/ewm_main_db
-    username: postgres
-    password: 12345
 
 eureka:
   client:
