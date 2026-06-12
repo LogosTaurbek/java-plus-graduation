@@ -1,6 +1,6 @@
 # ExploreWithMe — Этап 2: Разбивка на микросервисы
 
-Платформа для публикации городских мероприятий и сбора заявок на участие. Дипломный проект курса «Java-разработчик. Расширенный» (https://practicum.yandex.ru/java-developer-plus/)
+Дипломный проект курса «Java-разработчик. Расширенный» (https://practicum.yandex.ru/java-developer-plus/)
 
 ---
 
