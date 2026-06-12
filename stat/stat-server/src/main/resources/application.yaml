@@ -1,0 +1,17 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: stats-server
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ewm_stats_db
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:54321}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true

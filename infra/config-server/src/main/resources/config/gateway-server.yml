@@ -1,0 +1,14 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: main-service
+          uri: lb://main-service
+          predicates:
+            - Path=/categories/**, /events/**, /compilations/**, /locations/**, /admin/**, /users/**
+    loadbalancer:
+      cache:
+        enabled: false
