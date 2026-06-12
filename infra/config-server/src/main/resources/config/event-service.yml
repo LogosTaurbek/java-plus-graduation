@@ -17,3 +17,6 @@ spring:
     openfeign:
       circuitbreaker:
         enabled: true
+
+stats-service:
+  id: stats-server
