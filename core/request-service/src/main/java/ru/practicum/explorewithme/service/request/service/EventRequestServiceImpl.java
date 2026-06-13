@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.practicum.ewm.stats.proto.collector.ActionTypeProto;
 import ru.practicum.explorewithme.service.exception.ConflictException;
 import ru.practicum.explorewithme.service.exception.NotFoundException;
 import ru.practicum.explorewithme.service.request.client.EventClient;
@@ -18,7 +19,9 @@ import ru.practicum.explorewithme.service.request.enums.ParticipationRequestStat
 import ru.practicum.explorewithme.service.request.mapper.ParticipationRequestMapper;
 import ru.practicum.explorewithme.service.request.model.ParticipationRequest;
 import ru.practicum.explorewithme.service.user.dto.UserShortDto;
+import ru.practicum.explorewithme.stats.client.CollectorClient;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +36,7 @@ public class EventRequestServiceImpl implements EventRequestService {
     private final EventRequestRepository eventRequestRepository;
     private final UserClient userClient;
     private final EventClient eventClient;
+    private final CollectorClient collectorClient;
 
     @Override
     public List<ParticipationRequestDto> getEventRequests(Long userId, Long eventId) {
@@ -114,6 +118,8 @@ public class EventRequestServiceImpl implements EventRequestService {
                 r.setStatus(ParticipationRequestStatus.CONFIRMED);
                 confirmed.add(r);
                 remaining--;
+                collectorClient.collectUserAction(r.getRequesterId(), event.getId(),
+                        ActionTypeProto.ACTION_REGISTER, Instant.now());
             } else {
                 r.setStatus(ParticipationRequestStatus.REJECTED);
                 rejected.add(r);
@@ -188,6 +194,7 @@ public class EventRequestServiceImpl implements EventRequestService {
 
         if (event.getParticipantLimit() == 0 || !event.getRequestModeration()) {
             request.setStatus(ParticipationRequestStatus.CONFIRMED);
+            collectorClient.collectUserAction(userId, eventId, ActionTypeProto.ACTION_REGISTER, Instant.now());
         } else {
             request.setStatus(ParticipationRequestStatus.PENDING);
         }

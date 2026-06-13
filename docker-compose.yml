@@ -1,18 +1,137 @@
 services:
-  stat-db:
-    image: postgres:16.1
-    container_name: stat-db
+  discovery-server:
+    build: ./infra/discovery-server
+    container_name: discovery-server
     ports:
-      - "5432:5432"
+      - "8761:8761"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8761/actuator/health" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  config-server:
+    build: ./infra/config-server
+    container_name: config-server
+    depends_on:
+      discovery-server:
+        condition: service_healthy
     environment:
-      POSTGRES_DB: ewm_stats_db
+      SERVER_PORT: 8888
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+    healthcheck:
+      test: [ "CMD", "curl", "-sf", "http://discovery-server:8761/eureka/apps/CONFIG-SERVER" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  gateway-server:
+    build: ./infra/gateway-server
+    container_name: gateway-server
+    ports:
+      - "8080:8080"
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_PROCESS_ROLES: broker,controller
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qg
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: [ "CMD-SHELL", "nc -z localhost 9092" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  init-kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: init-kafka
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: |
+      "
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic stats.user-actions.v1 --replication-factor 1 --partitions 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic stats.events-similarity.v1 --replication-factor 1 --partitions 1
+      "
+
+  analyzer-db:
+    image: postgres:16.1
+    container_name: analyzer-db
+    environment:
+      POSTGRES_DB: ewm_analyzer_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 54321
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d ewm_stats_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d ewm_analyzer_db" ]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  collector:
+    build: ./stat/collector
+    container_name: collector
+    depends_on:
+      kafka:
+        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
+      config-server:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+
+  aggregator:
+    build: ./stat/aggregator
+    container_name: aggregator
+    depends_on:
+      kafka:
+        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
+      config-server:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+
+  analyzer:
+    build: ./stat/analyzer
+    container_name: analyzer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      init-kafka:
+        condition: service_completed_successfully
+      config-server:
+        condition: service_healthy
+      analyzer-db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
 
   main-db:
     image: postgres:16.1
@@ -28,3 +147,55 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  user-service:
+    build: ./core/user-service
+    container_name: user-service
+    depends_on:
+      main-db:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+
+  request-service:
+    build: ./core/request-service
+    container_name: request-service
+    depends_on:
+      main-db:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+
+  event-service:
+    build: ./core/event-service
+    container_name: event-service
+    depends_on:
+      main-db:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+
+  compilation-service:
+    build: ./core/compilation-service
+    container_name: compilation-service
+    depends_on:
+      main-db:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"

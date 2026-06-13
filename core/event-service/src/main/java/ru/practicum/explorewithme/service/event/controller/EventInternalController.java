@@ -52,7 +52,7 @@ public class EventInternalController {
                 .map(e -> EventMapper.toShortDto(
                         e,
                         userMap.getOrDefault(e.getInitiatorId(), new UserShortDto(e.getInitiatorId(), "N/A")),
-                        0L, 0L))
+                        0L, 0.0))
                 .collect(Collectors.toList());
     }
 }
