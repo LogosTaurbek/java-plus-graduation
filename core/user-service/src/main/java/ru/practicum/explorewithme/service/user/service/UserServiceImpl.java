@@ -12,6 +12,7 @@ import ru.practicum.explorewithme.service.exception.NotFoundException;
 import ru.practicum.explorewithme.service.user.dal.UserRepository;
 import ru.practicum.explorewithme.service.user.dto.NewUserRequest;
 import ru.practicum.explorewithme.service.user.dto.UserDto;
+import ru.practicum.explorewithme.service.user.dto.UserShortDto;
 import ru.practicum.explorewithme.service.user.mapper.UserMapper;
 import ru.practicum.explorewithme.service.user.model.User;
 
@@ -65,5 +66,19 @@ public class UserServiceImpl implements UserService {
         }
         userRepository.deleteById(userId);
         log.debug("Пользователь удален");
+    }
+
+    @Override
+    public UserShortDto getUserById(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("Пользователь с ИД=" + userId + " не найден"));
+        return UserMapper.toShortDto(user);
+    }
+
+    @Override
+    public List<UserShortDto> getUsersByIds(List<Long> ids) {
+        return userRepository.findAllById(ids).stream()
+                .map(UserMapper::toShortDto)
+                .collect(Collectors.toList());
     }
 }

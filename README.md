@@ -1,29 +1,35 @@
-# ExploreWithMe — Этап 1: Spring Cloud инфраструктура
+# ExploreWithMe — Этап 2: Разбивка на микросервисы
 
-Платформа для публикации городских мероприятий и сбора заявок на участие. Дипломный проект курса «Java-разработчик. Расширенный» (https://practicum.yandex.ru/java-developer-plus/)
+Дипломный проект курса «Java-разработчик. Расширенный» (https://practicum.yandex.ru/java-developer-plus/)
 
 ---
 
 ## Архитектура
 
-На этом этапе монолитное приложение подключено к Spring Cloud инфраструктуре. Все внешние запросы проходят через единую точку входа — Gateway, который маршрутизирует их в `main-service`.
+Приложение разбито на независимые микросервисы, каждый со своей схемой БД. Все внешние запросы проходят через единую точку входа — Gateway.
 
 ```
 Клиент
   │
   ▼
-gateway-server  :8080   — маршрутизация всех запросов
+gateway-server  :8080   — маршрутизация по пути
   │
-  └── main-service        — все бизнес-эндпоинты (события, пользователи,
-                            заявки, подборки, категории, локации)
+  ├── user-service        — управление пользователями (/admin/users/**)
+  ├── event-service       — события, категории, локации
+  │                         (/events/**, /categories/**, /locations/**,
+  │                          /admin/events/**, /admin/categories/**,
+  │                          /admin/locations/**, /users/*/events/**)
+  ├── request-service     — заявки на участие
+  │                         (/users/*/requests/**, /users/*/events/*/requests/**)
+  ├── compilation-service — подборки (/compilations/**, /admin/compilations/**)
+  └── stats-server        — статистика просмотров (/hit, /stats/**)
 
 discovery-server  :8761  — Eureka: регистрация и обнаружение сервисов
 config-server     :8888  — Spring Cloud Config: централизованная конфигурация
-stats-server      :случайный — запись и чтение статистики просмотров
 ```
 
 **Базы данных:**
-- `ewm_main_db` — БД для `main-service` (пользователи, события, заявки, подборки)
+- `ewm_main_db` — общая БД для `user-service`, `event-service`, `request-service`, `compilation-service` (каждый работает только со своими таблицами)
 - `ewm_stats_db` — БД `stats-server`
 
 ---
@@ -35,7 +41,10 @@ stats-server      :случайный — запись и чтение стат�
 | `gateway-server` | Единая точка входа, маршрутизация | 8080 |
 | `discovery-server` | Реестр сервисов (Eureka) | 8761 |
 | `config-server` | Централизованная конфигурация | 8888 |
-| `main-service` | Все бизнес-операции | случайный |
+| `user-service` | CRUD пользователей | случайный |
+| `event-service` | События, категории, локации, статистика | случайный |
+| `request-service` | Заявки на участие в событиях | случайный |
+| `compilation-service` | Подборки событий | случайный |
 | `stats-server` | Запись и чтение статистики просмотров | случайный |
 
 Бизнес-сервисы используют случайный порт (`server.port: 0`) — адрес обнаруживается через Eureka.
@@ -44,14 +53,30 @@ stats-server      :случайный — запись и чтение стат�
 
 ## Взаимодействие между сервисами
 
-`main-service` обращается к `stats-server` напрямую через `StatsClient` (Spring WebClient + Eureka discovery):
+Вызовы между микросервисами происходят через Feign-клиенты с circuit breaker (Resilience4j). При недоступности зависимого сервиса применяется fallback.
 
-| Вызывает | Вызывает кого | Эндпоинт | Поведение при недоступности |
+| Вызывает | Вызывает кого | Эндпоинт | Fallback |
 |---|---|---|---|
-| `main-service` | `stats-server` | `POST /hit` | fire-and-forget, ошибка логируется |
-| `main-service` | `stats-server` | `GET /stats` | возвращает `views = 0` |
+| `event-service` | `user-service` | `GET /internal/users/{id}` | `UserShortDto(id, "N/A")` |
+| `event-service` | `user-service` | `GET /internal/users?ids=` | пустой список |
+| `event-service` | `request-service` | `GET /internal/requests/count?eventIds=` | пустая Map (confirmedRequests = 0) |
+| `request-service` | `event-service` | `GET /internal/events/{id}` | исключение (критично) |
+| `request-service` | `user-service` | `GET /internal/users/{id}` | `null` |
+| `compilation-service` | `event-service` | `GET /internal/events?ids=` | пустой список событий |
 
-Отправка хита реализована асинхронно (`subscribe()`), чтобы не блокировать Tomcat-поток. Чтение статистики — синхронное с таймаутом 5 секунд.
+---
+
+## Внутренний API (не проксируется через Gateway)
+
+Для межсервисного взаимодействия используются внутренние эндпоинты:
+
+| Сервис | Путь | Описание |
+|---|---|---|
+| `user-service` | `GET /internal/users/{userId}` | Получить пользователя по ID |
+| `user-service` | `GET /internal/users?ids=` | Получить список пользователей по ID |
+| `event-service` | `GET /internal/events/{eventId}` | Получить событие по ID (для заявок) |
+| `event-service` | `GET /internal/events?ids=` | Получить список событий по ID (для подборок) |
+| `request-service` | `GET /internal/requests/count?eventIds=` | Получить количество подтверждённых заявок |
 
 ---
 
@@ -61,12 +86,12 @@ stats-server      :случайный — запись и чтение стат�
 
 | Файл | Назначение |
 |---|---|
-| `gateway-server.yml` | Маршруты Gateway (все пути → `main-service`) |
-| `main-service.yml` | Datasource, JPA, идентификатор stats-server |
-| `stats-server.yml` / `*-docker.yaml` | Datasource stats-server |
-| `user-service.yml` | Datasource user-service (задел для следующего этапа) |
-
-Все чувствительные параметры (пароль БД, порт) задаются через переменные окружения с fallback-значением: `${POSTGRES_PASSWORD:54321}`.
+| `gateway-server.yml` | Маршруты Gateway |
+| `user-service.yml` / `*-docker.yaml` | Настройки user-service |
+| `event-service.yml` / `*-docker.yaml` | Настройки event-service |
+| `request-service.yml` / `*-docker.yaml` | Настройки request-service |
+| `compilation-service.yml` / `*-docker.yaml` | Настройки compilation-service |
+| `stats-server.yml` / `*-docker.yaml` | Настройки stats-server |
 
 Профиль `docker` активируется через `SPRING_PROFILES_ACTIVE=docker` в `docker-compose.yml` и переопределяет URL базы данных с `localhost` на имя контейнера.
 
@@ -97,8 +122,8 @@ docker compose up --build
 
 ## Что изучил в процессе
 
-- Как работает Service Discovery: сервисы регистрируются по имени, клиенты находят их через Eureka без захардкоженных адресов
-- Зачем нужен `bootstrap.yml` и чем он отличается от `application.yml` — он загружается до основного контекста и используется для подключения к Config Server
-- Как `${VAR:default}` в Spring позволяет одновременно поддерживать локальный запуск и CI/CD без изменения кода
-- Почему синхронный `WebClient.block()` без таймаута опасен под нагрузкой — исчерпывает пул потоков; решение — либо `subscribe()` для fire-and-forget, либо `block(Duration)`
-- Что отступы в YAML критичны: `spring.cloud.loadbalancer` и `spring.cloud.gateway.loadbalancer` — это разные свойства с разным поведением
+- Как определять границы микросервисов: разбил монолит на домены — события, заявки, подборки, пользователи
+- Как работает Feign + Resilience4j: вместо прямых вызовов — HTTP-клиенты с fallback при отказе зависимого сервиса
+- Почему важно избегать N+1 запросов: вместо вызова `getUser(id)` в цикле — один батч-запрос `getUsers(ids)`
+- Как проектировать внутренний API: `/internal/**` — эндпоинты только для межсервисного взаимодействия, не проксируются через Gateway
+- Что микросервисы, работающие с общей БД, изолируются на уровне таблиц, а не схем — каждый сервис знает только о своих таблицах

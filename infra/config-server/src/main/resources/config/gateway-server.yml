@@ -5,10 +5,46 @@ spring:
   cloud:
     gateway:
       routes:
-        - id: main-service
-          uri: lb://main-service
+        - id: request-service-events
+          uri: lb://request-service
           predicates:
-            - Path=/categories/**, /events/**, /compilations/**, /locations/**, /admin/**, /users/**
+            - Path=/users/*/events/*/requests, /users/*/events/*/requests/**
+        - id: request-service-users
+          uri: lb://request-service
+          predicates:
+            - Path=/users/*/requests, /users/*/requests/**
+        - id: event-service-private
+          uri: lb://event-service
+          predicates:
+            - Path=/users/*/events, /users/*/events/**
+        - id: event-service-public
+          uri: lb://event-service
+          predicates:
+            - Path=/events, /events/**
+        - id: event-service-admin-events
+          uri: lb://event-service
+          predicates:
+            - Path=/admin/events, /admin/events/**
+        - id: event-service-categories
+          uri: lb://event-service
+          predicates:
+            - Path=/categories, /categories/**, /admin/categories, /admin/categories/**
+        - id: event-service-locations
+          uri: lb://event-service
+          predicates:
+            - Path=/locations, /locations/**, /admin/locations, /admin/locations/**
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/admin/users/**
+        - id: compilation-service
+          uri: lb://compilation-service
+          predicates:
+            - Path=/compilations, /compilations/**, /admin/compilations, /admin/compilations/**
+        - id: stats-server
+          uri: lb://stats-server
+          predicates:
+            - Path=/hit, /stats, /stats/**
     loadbalancer:
       cache:
         enabled: false
