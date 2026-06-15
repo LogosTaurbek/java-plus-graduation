@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: analyzer
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: analyzer
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: ru.practicum.ewm.stats.avro.UserActionAvroDeserializer
+      auto-offset-reset: earliest
+  datasource:
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/ewm_analyzer_db
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:54321}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: false
+
+logging:
+  level:
+    org.hibernate.orm.jdbc.bind: TRACE
+    ru.practicum.explorewithme.analyzer: DEBUG
+  sql:
+    init:
+      mode: always
+      continue-on-error: true
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+
+grpc:
+  server:
+    port: 0
+
+recommendations:
+  n-interactions: 10
+  k-neighbors: 10

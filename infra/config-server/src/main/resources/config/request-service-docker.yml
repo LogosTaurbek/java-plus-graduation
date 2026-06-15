@@ -1,0 +1,3 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://main-db:5432/ewm_main_db

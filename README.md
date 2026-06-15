@@ -1,4 +1,4 @@
-# ExploreWithMe — Этап 2: Разбивка на микросервисы
+# ExploreWithMe — Этап 3-1: Рекомендательная система
 
 Дипломный проект курса «Java-разработчик. Расширенный» (https://practicum.yandex.ru/java-developer-plus/)
 
@@ -6,31 +6,39 @@
 
 ## Архитектура
 
-Приложение разбито на независимые микросервисы, каждый со своей схемой БД. Все внешние запросы проходят через единую точку входа — Gateway.
-
 ```
 Клиент
   │
   ▼
 gateway-server  :8080   — маршрутизация по пути
   │
-  ├── user-service        — управление пользователями (/admin/users/**)
-  ├── event-service       — события, категории, локации
-  │                         (/events/**, /categories/**, /locations/**,
-  │                          /admin/events/**, /admin/categories/**,
-  │                          /admin/locations/**, /users/*/events/**)
+  ├── user-service        — управление пользователями
+  ├── event-service       — события, категории, локации, рекомендации
   ├── request-service     — заявки на участие
-  │                         (/users/*/requests/**, /users/*/events/*/requests/**)
-  ├── compilation-service — подборки (/compilations/**, /admin/compilations/**)
-  └── stats-server        — статистика просмотров (/hit, /stats/**)
+  └── compilation-service — подборки событий
 
 discovery-server  :8761  — Eureka: регистрация и обнаружение сервисов
 config-server     :8888  — Spring Cloud Config: централизованная конфигурация
-```
 
-**Базы данных:**
-- `ewm_main_db` — общая БД для `user-service`, `event-service`, `request-service`, `compilation-service` (каждый работает только со своими таблицами)
-- `ewm_stats_db` — БД `stats-server`
+Поток действий пользователей (асинхронно через Kafka):
+
+event-service / request-service
+  │  gRPC (UserActionProto)
+  ▼
+collector  ──► Kafka: stats.user-actions.v1
+                         │
+                    ┌────┴────┐
+                    ▼         ▼
+               aggregator   analyzer
+               (cosine sim)  (PostgreSQL)
+                    │         │
+                    └────┬────┘
+         Kafka: stats.events-similarity.v1
+                         │
+                    analyzer ◄── gRPC (рекомендации)
+                                    ▲
+                              event-service
+```
 
 ---
 
@@ -42,68 +50,82 @@ config-server     :8888  — Spring Cloud Config: централизованна
 | `discovery-server` | Реестр сервисов (Eureka) | 8761 |
 | `config-server` | Централизованная конфигурация | 8888 |
 | `user-service` | CRUD пользователей | случайный |
-| `event-service` | События, категории, локации, статистика | случайный |
-| `request-service` | Заявки на участие в событиях | случайный |
+| `event-service` | События, рекомендации, лайки | случайный |
+| `request-service` | Заявки на участие | случайный |
 | `compilation-service` | Подборки событий | случайный |
-| `stats-server` | Запись и чтение статистики просмотров | случайный |
+| `collector` | Приём действий пользователей (gRPC → Kafka) | случайный |
+| `aggregator` | Вычисление косинусного сходства событий | — |
+| `analyzer` | Хранение статистики + gRPC рекомендации | случайный |
 
-Бизнес-сервисы используют случайный порт (`server.port: 0`) — адрес обнаруживается через Eureka.
+---
+
+## Рекомендательная система
+
+Используется item-based collaborative filtering с косинусным сходством.
+
+**Веса действий:**
+| Действие | Вес |
+|---|---|
+| VIEW (просмотр) | 0.4 |
+| REGISTER (регистрация) | 0.8 |
+| LIKE (лайк) | 1.0 |
+
+Берётся максимальный вес пользователя по событию (не суммируется).
+
+**Формула сходства событий A и B:**
+
+```
+score(A,B) = Σ min(w(u,A), w(u,B))  /  √(Σ w(u,A)²) × √(Σ w(u,B)²)
+```
+
+**Новые эндпоинты event-service:**
+| Метод | Путь | Описание |
+|---|---|---|
+| `GET` | `/events` | Публичный список событий (сортировка по рейтингу вместо просмотров) |
+| `GET` | `/events/{id}` | Событие по ID + фиксация просмотра (ACTION_VIEW) |
+| `GET` | `/events/recommendations` | Персональные рекомендации для пользователя |
+| `GET` | `/events/{id}/similar` | Похожие события |
+| `PUT` | `/events/{id}/like` | Поставить лайк событию (ACTION_LIKE) |
+
+Заголовок `X-EWM-USER-ID` передаётся от клиента через Gateway для идентификации пользователя.
 
 ---
 
 ## Взаимодействие между сервисами
 
-Вызовы между микросервисами происходят через Feign-клиенты с circuit breaker (Resilience4j). При недоступности зависимого сервиса применяется fallback.
-
-| Вызывает | Вызывает кого | Эндпоинт | Fallback |
-|---|---|---|---|
-| `event-service` | `user-service` | `GET /internal/users/{id}` | `UserShortDto(id, "N/A")` |
-| `event-service` | `user-service` | `GET /internal/users?ids=` | пустой список |
-| `event-service` | `request-service` | `GET /internal/requests/count?eventIds=` | пустая Map (confirmedRequests = 0) |
-| `request-service` | `event-service` | `GET /internal/events/{id}` | исключение (критично) |
-| `request-service` | `user-service` | `GET /internal/users/{id}` | `null` |
-| `compilation-service` | `event-service` | `GET /internal/events?ids=` | пустой список событий |
-
----
-
-## Внутренний API (не проксируется через Gateway)
-
-Для межсервисного взаимодействия используются внутренние эндпоинты:
-
-| Сервис | Путь | Описание |
+**HTTP (Feign + Resilience4j):**
+| Вызывает | Кого | Эндпоинт |
 |---|---|---|
-| `user-service` | `GET /internal/users/{userId}` | Получить пользователя по ID |
-| `user-service` | `GET /internal/users?ids=` | Получить список пользователей по ID |
-| `event-service` | `GET /internal/events/{eventId}` | Получить событие по ID (для заявок) |
-| `event-service` | `GET /internal/events?ids=` | Получить список событий по ID (для подборок) |
-| `request-service` | `GET /internal/requests/count?eventIds=` | Получить количество подтверждённых заявок |
+| `event-service` | `user-service` | `GET /internal/users/{id}`, `GET /internal/users?ids=` |
+| `event-service` | `request-service` | `GET /internal/requests/count?eventIds=`, `GET /internal/requests/user/{userId}` |
+| `request-service` | `event-service` | `GET /internal/events/{id}` |
+| `request-service` | `user-service` | `GET /internal/users/{id}` |
+| `compilation-service` | `event-service` | `GET /internal/events?ids=` |
+
+**gRPC:**
+| Вызывает | Кого | Метод |
+|---|---|---|
+| `event-service` | `collector` | `CollectUserAction` (VIEW, LIKE) |
+| `request-service` | `collector` | `CollectUserAction` (REGISTER) |
+| `event-service` | `analyzer` | `GetRecommendationsForUser`, `GetSimilarEvents`, `GetInteractionsCount` |
 
 ---
 
-## Настройки
+## Kafka топики
 
-Все настройки хранятся в `infra/config-server/src/main/resources/config/`:
+| Топик | Producer | Consumer |
+|---|---|---|
+| `stats.user-actions.v1` | `collector` | `aggregator`, `analyzer` |
+| `stats.events-similarity.v1` | `aggregator` | `analyzer` |
 
-| Файл | Назначение |
-|---|---|
-| `gateway-server.yml` | Маршруты Gateway |
-| `user-service.yml` / `*-docker.yaml` | Настройки user-service |
-| `event-service.yml` / `*-docker.yaml` | Настройки event-service |
-| `request-service.yml` / `*-docker.yaml` | Настройки request-service |
-| `compilation-service.yml` / `*-docker.yaml` | Настройки compilation-service |
-| `stats-server.yml` / `*-docker.yaml` | Настройки stats-server |
-
-Профиль `docker` активируется через `SPRING_PROFILES_ACTIVE=docker` в `docker-compose.yml` и переопределяет URL базы данных с `localhost` на имя контейнера.
+Сообщения сериализованы в Avro (бинарный формат без schema registry).
 
 ---
 
 ## Запуск
 
 ```bash
-# Сборка всех модулей
 mvn package -DskipTests
-
-# Запуск всех сервисов
 docker compose up --build
 ```
 
@@ -113,17 +135,11 @@ docker compose up --build
 
 ---
 
-## Спецификации API
-
-- [Основной сервис (ewm-main-service)](ewm-main-service-spec.json)
-- [Сервис статистики (ewm-stats-service)](ewm-stats-service-spec.json)
-
----
-
 ## Что изучил в процессе
 
-- Как определять границы микросервисов: разбил монолит на домены — события, заявки, подборки, пользователи
-- Как работает Feign + Resilience4j: вместо прямых вызовов — HTTP-клиенты с fallback при отказе зависимого сервиса
-- Почему важно избегать N+1 запросов: вместо вызова `getUser(id)` в цикле — один батч-запрос `getUsers(ids)`
-- Как проектировать внутренний API: `/internal/**` — эндпоинты только для межсервисного взаимодействия, не проксируются через Gateway
-- Что микросервисы, работающие с общей БД, изолируются на уровне таблиц, а не схем — каждый сервис знает только о своих таблицах
+- Как работает item-based collaborative filtering и косинусное сходство событий
+- Инкрементальное обновление similarity scores без перепересчёта всей матрицы
+- Apache Kafka с Avro-сериализацией без schema registry — ручные сериализаторы
+- gRPC + Protocol Buffers для низколатентного межсервисного взаимодействия
+- Серверный стриминг gRPC (server-side streaming) для пагинации рекомендаций
+- Upsert через нативный SQL с `ON CONFLICT DO UPDATE` и `GREATEST()` для идемпотентных записей

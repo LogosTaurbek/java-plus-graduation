@@ -13,4 +13,9 @@ public class RequestClientFallback implements RequestClient {
     public Map<Long, Long> getConfirmedRequestsCounts(List<Long> eventIds) {
         return Collections.emptyMap();
     }
+
+    @Override
+    public List<ParticipationRequestDto> getUserRequests(Long userId) {
+        return Collections.emptyList();
+    }
 }

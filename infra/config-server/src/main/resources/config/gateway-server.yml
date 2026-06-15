@@ -41,10 +41,6 @@ spring:
           uri: lb://compilation-service
           predicates:
             - Path=/compilations, /compilations/**, /admin/compilations, /admin/compilations/**
-        - id: stats-server
-          uri: lb://stats-server
-          predicates:
-            - Path=/hit, /stats, /stats/**
     loadbalancer:
       cache:
         enabled: false

@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: collector
+  kafka:
+    producer:
+      bootstrap-servers: localhost:9092
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: ru.practicum.ewm.stats.avro.UserActionAvroSerializer
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+
+grpc:
+  server:
+    port: 0

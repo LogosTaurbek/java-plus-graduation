@@ -22,4 +22,8 @@ public interface EventService {
     EventFullDto updateEventByAdmin(Long eventId, UpdateEventAdminRequest request);
 
     List<EventFullDto> getEventsByLocation(Long locId, int from, int size);
+
+    List<EventShortDto> getRecommendedEvents(long userId);
+
+    List<EventShortDto> getSimilarEvents(long eventId, long userId, int maxResults);
 }
